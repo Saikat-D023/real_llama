@@ -7,7 +7,7 @@ let openai = new OpenAI({
 export async function POST(req: Request) {
     const data = await req.json();
 
-    let completion = await openai.chat.completions.create({
+    let res = await openai.chat.completions.create({
         model: 'gpt-4o-mini', // or 'gpt-4o' depending on your preference
         messages: [
             {
@@ -19,10 +19,13 @@ export async function POST(req: Request) {
                 content: data.prompt,
             },
         ],
+        stream: true,
     });
 
-    return Response.json({
-        code: completion.choices[0].message.content
+    return new Response(res.toReadableStream(), {
+        headers: {
+            'Cache-Control': 'no-cache',
+        },
     })
 }
 

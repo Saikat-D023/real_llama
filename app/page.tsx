@@ -1,28 +1,63 @@
 "use client"
-import Image from "next/image";
 import { ArrowLongRightIcon } from "@heroicons/react/24/outline";
 import { useState } from "react";
+import { Sandpack } from "@codesandbox/sandpack-react";
 
 
 export default function Home() {
-  let [prompt, setPrompt] = useState(' ');
+  let [prompt, setPrompt] = useState('');
+  let [generatedCode, setGeneratedCode] = useState('')
 
   async function createApp(e: any) {
-    e.preventDefault()
+    e.preventDefault();
 
-    //1. Generate the code
-    await fetch("/api/generateCode/", {
+    let res = await fetch('/api/generateCode', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        prompt,
-      })
-    })
-    //2. render the app
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt }),
+    });
+
+    if (!res.body) return;
+
+    for await (let result of readStream(res.body as any)) {
+      setGeneratedCode(
+        (prev) => prev + result.choices.map((c: any) => c.delta?.content ?? '').join('')
+      );
+    }
   }
 
+  async function* readStream(stream: ReadableStream<Uint8Array>) {
+    const reader = stream.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+
+      // Keep the last partial line in the buffer
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        try {
+          const jsonStr = trimmed.startsWith('data: ') ? trimmed.slice(6) : trimmed;
+          if (jsonStr !== '[DONE]') {
+            yield JSON.parse(jsonStr);
+          }
+        } catch (e) {
+          console.error('Failed to parse line:', line, e);
+        }
+      }
+    }
+
+    reader.releaseLock();
+  }
   return (
     <div className="relative flex min-h-screen w-screen flex-col items-center justify-center overflow-hidden bg-[#050505] font-sans text-white">
       {/* Background Gradients */}
@@ -74,7 +109,25 @@ export default function Home() {
             </button>
           </div>
         </form>
+
       </div>
+
+      {generatedCode && (
+        <div className="relative z-10 w-full max-w-6xl px-4 pb-12 mt-8">
+          <Sandpack
+            template='react-ts'
+            theme="dark"
+            files={{
+              '/App.tsx': generatedCode,
+            }}
+            options={{
+              showNavigator: true,
+              editorHeight: '70vh',
+              showTabs: false,
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }
